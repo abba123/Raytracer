@@ -1,6 +1,8 @@
 extern crate image;
 use image::DynamicImage;
+use std::ops::{Add, Sub, Mul, Neg};
 
+#[derive(Clone, Copy)]
 pub struct Point{
     pub x: f64,
     pub y: f64,
@@ -13,6 +15,18 @@ impl Point{
             x: 0.0,
             y: 0.0,
             z: 0.0,
+        }
+    }
+}
+
+impl Sub<Point> for Point {
+    type Output = Vector3;
+
+    fn sub(self, other: Point) -> Vector3 {
+        Vector3 {
+            x: self.x - other.x,
+            y: self.y - other.y,
+            z: self.z - other.z,
         }
     }
 }
@@ -77,6 +91,11 @@ impl Vector3{
             z: self.z * l_inv,
         }
     }
+
+    pub fn dot(&self, other: &Vector3) -> f64 {
+        self.x * other.x + self.y * other.y + self.z * other.z
+    }
+
 }
 
 pub fn create_prime(x: u32, y: u32, scene: &Scene) -> Ray {
@@ -96,6 +115,20 @@ pub fn create_prime(x: u32, y: u32, scene: &Scene) -> Ray {
              .normalize(),
      }
  }
+
+pub trait Intersectable{
+    fn intersect(&self, ray: &Ray) -> bool;
+}
+
+
+impl Intersectable for Sphere {
+    fn intersect(&self, ray: &Ray) -> bool {
+        let l: Vector3 = self.center - ray.origin;
+        let adj2 = l.dot(&ray.direction);
+        let d2 = l.dot(&l) - (adj2 * adj2);
+        d2 < (self.radius * self.radius)
+    }
+}
 
 pub fn render(scene: &Scene) -> DynamicImage{
     DynamicImage::new_rgb8(scene.width, scene.height)
