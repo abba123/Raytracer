@@ -1,6 +1,12 @@
 extern crate image;
-use image::DynamicImage;
+use image::{DynamicImage, GenericImage, Pixel, Rgba};
 use std::ops::{Add, Sub, Mul, Neg};
+
+const GAMMA: f32 = 2.2;
+
+fn gamma_encode(linear: f32) -> f32 {
+    linear.powf(1.0 / GAMMA)
+}
 
 #[derive(Clone, Copy)]
 pub struct Point{
@@ -31,18 +37,32 @@ impl Sub<Point> for Point {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct Color{
     pub r: f32,
     pub g: f32,
     pub b: f32,
 }
 
+impl Color{
+    pub fn to_rgba(&self) -> Rgba<u8> {
+        Rgba::from_channels(
+            (gamma_encode(self.r) * 255.0) as u8,
+            (gamma_encode(self.g) * 255.0) as u8,
+            (gamma_encode(self.b) * 255.0) as u8,
+            255,
+        )
+    }
+}
+
+#[derive(Clone, Copy)]
 pub struct Sphere{
     pub center: Point,
     pub radius: f64,
     pub color: Color,
 }
 
+#[derive(Clone, Copy)]
 pub struct Scene{
     pub width: u32,
     pub height: u32,
@@ -50,20 +70,33 @@ pub struct Scene{
     pub sphere: Sphere,
 }
 
+#[derive(Clone, Copy)]
 pub struct Ray {
     pub origin: Point,
     pub direction: Vector3,
 }
 
 impl Ray{
-    pub fn create_prime(x: u32, y: u32, scene: Scene) -> Ray{
-        Ray{
+    pub fn create_prime(x: u32, y: u32, scene: &Scene) -> Ray {
+        let fov_adjustment = (scene.fov.to_radians() / 2.0).tan();
+        let aspect_ratio = (scene.width as f64) / (scene.height as f64);
+        let sensor_x = ((((x as f64 + 0.5) / scene.width as f64) * 2.0 - 1.0) * aspect_ratio ) * fov_adjustment;
+        let sensor_y = (1.0 - ((y as f64 + 0.5) / scene.height as f64) * 2.0) * fov_adjustment;
+       
+
+        Ray {
             origin: Point::zero(),
-            direction: Vector3::zero(),
+            direction: Vector3 {
+                x: sensor_x,
+                y: sensor_y,
+                z: -1.0,
+            }
+            .normalize(),
         }
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct Vector3{
     pub x: f64,
     pub y: f64,
@@ -98,23 +131,7 @@ impl Vector3{
 
 }
 
-pub fn create_prime(x: u32, y: u32, scene: &Scene) -> Ray {
-     let fov_adjustment = (scene.fov.to_radians() / 2.0).tan();
-     let aspect_ratio = (scene.width as f64) / (scene.height as f64);
-     let sensor_x = ((((x as f64 + 0.5) / scene.width as f64) * 2.0 - 1.0) * aspect_ratio ) * fov_adjustment;
-     let sensor_y = (1.0 - ((y as f64 + 0.5) / scene.height as f64) * 2.0) * fov_adjustment;
-       
 
-     Ray {
-         origin: Point::zero(),
-         direction: Vector3 {
-                 x: sensor_x,
-                 y: sensor_y,
-                 z: -1.0,
-             }
-             .normalize(),
-     }
- }
 
 pub trait Intersectable{
     fn intersect(&self, ray: &Ray) -> bool;
@@ -130,8 +147,21 @@ impl Intersectable for Sphere {
     }
 }
 
-pub fn render(scene: &Scene) -> DynamicImage{
-    DynamicImage::new_rgb8(scene.width, scene.height)
+pub fn render(scene: &Scene) -> DynamicImage {
+    let mut image = DynamicImage::new_rgb8(scene.width, scene.height);
+    let black = Rgba::from_channels(0, 0, 0, 0);
+    for x in 0..scene.width {
+        for y in 0..scene.height {
+            let ray = Ray::create_prime(x, y, scene);
+
+            if scene.sphere.intersect(&ray) {
+                image.put_pixel(x, y, scene.sphere.color.to_rgba())
+            } else {
+                image.put_pixel(x, y, black);
+            }
+        }
+    }
+    image
 }
 
 fn main() {
