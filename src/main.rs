@@ -134,38 +134,120 @@ impl Vector3{
 
 
 pub trait Intersectable{
-    fn intersect(&self, ray: &Ray) -> bool;
+    fn intersect(&self, ray: &Ray) -> Option<f64>;
 }
 
-
 impl Intersectable for Sphere {
-    fn intersect(&self, ray: &Ray) -> bool {
+    fn intersect(&self, ray: &Ray) -> Option<f64>{
         let l: Vector3 = self.center - ray.origin;
         let adj2 = l.dot(&ray.direction);
         let d2 = l.dot(&l) - (adj2 * adj2);
-        d2 < (self.radius * self.radius)
+        let radius2 = self.radius * self.radius;
+        if d2 > radius2{
+            return None
+        }
+        let len = (radius2 - d2).sqrt();
+        
+        let inter_len1 = (adj2 - len);
+        let inter_len2 = (adj2 + len);
+        
+
+        if inter_len1 < inter_len2{
+            Some(inter_len1)
+        } else{
+            Some(inter_len2)
+        }
     }
 }
 
-pub fn render(scene: &Scene) -> DynamicImage {
-    let mut image = DynamicImage::new_rgb8(scene.width, scene.height);
+pub fn render(scene: &[Scene]) -> DynamicImage {
+    println!("{}",scene[0].width);
+    let mut image = DynamicImage::new_rgb8(scene[0].width, scene[0].height);
     let black = Rgba::from_channels(0, 0, 0, 0);
-    for x in 0..scene.width {
-        for y in 0..scene.height {
-            let ray = Ray::create_prime(x, y, scene);
+    for x in 0..scene[0].width {
+        for y in 0..scene[0].height {
+            let mut inter = Option::None;
+            let mut color = Color{r: 0.0, g: 0.0, b: 0.0};
+            for s in scene{
+                let ray = Ray::create_prime(x, y, &s);
+                let inter_tmp = s.sphere.intersect(&ray);
+                if inter_tmp != None{
+                    if inter != None{
+                        if inter_tmp < inter{
+                            color = s.sphere.color;
+                            inter = inter_tmp;
+                        }
+                    } 
+                    else{
+                        color = s.sphere.color;
+                        inter = inter_tmp;
+                    }
 
-            if scene.sphere.intersect(&ray) {
-                image.put_pixel(x, y, scene.sphere.color.to_rgba())
-            } else {
-                image.put_pixel(x, y, black);
+                }
             }
+            image.put_pixel(x, y, color.to_rgba());
         }
     }
     image
 }
 
 fn main() {
-    let scene = Scene {
+let scene = vec![Scene {
+        width: 800,
+        height: 600,
+        fov: 90.0,
+        sphere: Sphere{
+            center: Point{
+                x: 0.0,
+                y: 0.0,
+                z: -3.0,
+            },
+            radius: 1.0,
+            color: Color{
+                r: 0.2,
+                g: 1.0,
+                b: 0.2,
+            },
+        },
+    },
+    Scene {
+        width: 800,
+        height: 600,
+        fov: 90.0,
+        sphere: Sphere{
+            center: Point{
+                x: 2.0,
+                y: 0.0,
+                z: -5.0,
+            },
+            radius: 1.0,
+            color: Color{
+                r: 1.0,
+                g: 0.0,
+                b: 0.4,
+            },
+        },
+    },
+    Scene {
+        width: 800,
+        height: 600,
+        fov: 90.0,
+        sphere: Sphere{
+            center: Point{
+                x: 4.0,
+                y: 0.0,
+                z: -7.0,
+            },
+            radius: 1.0,
+            color: Color{
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+            },
+        },
+    }];
+  /*
+let scene = vec![Scene {
         width: 800,
         height: 600,
         fov: 90.0,
@@ -177,14 +259,13 @@ fn main() {
             },
             radius: 1.0,
             color: Color{
-                r: 0.4,
+                r: 0.2,
                 g: 1.0,
-                b: 0.4,
+                b: 0.2,
             },
         },
-    };
-    
-
+    }];
+    */
     let img:DynamicImage = render(&scene);
     img.save("test.png").unwrap();
 }
