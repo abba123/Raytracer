@@ -63,11 +63,33 @@ pub struct Sphere{
 }
 
 #[derive(Clone, Copy)]
+pub struct Plane{
+    pub origin: Point,
+    pub normal: Vector3,
+    pub color: Color,
+}
+
+#[derive(Clone, Copy)]
+pub enum Element{
+    Sphere(Sphere),
+    Plane(Plane),
+}
+
+impl Element {
+    pub fn color(&self) -> Color {
+        match *self {
+            Element::Sphere(ref s) => s.color,
+            Element::Plane(ref p) => p.color,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
 pub struct Scene{
     pub width: u32,
     pub height: u32,
     pub fov: f64,
-    pub sphere: Sphere,
+    pub element: Element,
 }
 
 #[derive(Clone, Copy)]
@@ -153,9 +175,32 @@ impl Intersectable for Sphere {
         
 
         if inter_len1 < inter_len2{
-            Some(inter_len1)
+            return Some(inter_len1)
         } else{
-            Some(inter_len2)
+            return Some(inter_len2)
+        }
+    }
+}
+
+impl Intersectable for Plane{
+    fn intersect(&self, ray: &Ray) -> Option<f64>{
+        let denom = self.normal.dot(&ray.direction);
+        if denom > 1e-6{
+            let v = self.origin - ray.origin;
+            let distance = v.dot(&self.normal) / denom;
+            if distance >= 0.0 {
+                return Some(distance)
+            }
+        }
+        return None
+    }
+}
+
+impl Intersectable for Element {
+    fn intersect(&self, ray: &Ray) -> Option<f64> {
+        match *self {
+            Element::Sphere(ref s) => s.intersect(ray),
+            Element::Plane(ref p) => p.intersect(ray),
         }
     }
 }
@@ -170,16 +215,16 @@ pub fn render(scene: &[Scene]) -> DynamicImage {
             let mut color = Color{r: 0.0, g: 0.0, b: 0.0};
             for s in scene{
                 let ray = Ray::create_prime(x, y, &s);
-                let inter_tmp = s.sphere.intersect(&ray);
+                let inter_tmp = s.element.intersect(&ray);
                 if inter_tmp != None{
                     if inter != None{
                         if inter_tmp < inter{
-                            color = s.sphere.color;
+                            color = s.element.color();
                             inter = inter_tmp;
                         }
                     } 
                     else{
-                        color = s.sphere.color;
+                        color = s.element.color();
                         inter = inter_tmp;
                     }
 
@@ -192,60 +237,93 @@ pub fn render(scene: &[Scene]) -> DynamicImage {
 }
 
 fn main() {
-let scene = vec![Scene {
+let scene = vec![
+    Scene {
         width: 800,
         height: 600,
         fov: 90.0,
-        sphere: Sphere{
-            center: Point{
-                x: 0.0,
-                y: 0.0,
-                z: -3.0,
+        element: Element::Sphere(
+            Sphere{
+                center: Point{
+                    x: 0.0,
+                    y: 0.0,
+                    z: -3.0,
+                },
+                radius: 1.0,
+                color: Color{
+                    r: 0.2,
+                    g: 1.0,
+                    b: 0.2,
+                },
             },
-            radius: 1.0,
-            color: Color{
-                r: 0.2,
-                g: 1.0,
-                b: 0.2,
-            },
-        },
+        ),
     },
     Scene {
         width: 800,
         height: 600,
         fov: 90.0,
-        sphere: Sphere{
-            center: Point{
-                x: 2.0,
-                y: 0.0,
-                z: -5.0,
+        element: Element::Sphere(
+            Sphere{
+                center: Point{
+                    x: 2.0,
+                    y: 0.0,
+                    z: -5.0,
+                },
+                radius: 1.0,
+                color: Color{
+                    r: 1.0,
+                    g: 0.0,
+                    b: 0.4,
+                },
             },
-            radius: 1.0,
-            color: Color{
-                r: 1.0,
-                g: 0.0,
-                b: 0.4,
-            },
-        },
+        ),
     },
     Scene {
         width: 800,
         height: 600,
         fov: 90.0,
-        sphere: Sphere{
-            center: Point{
-                x: 4.0,
-                y: 0.0,
-                z: -7.0,
+        element: Element::Sphere(
+            Sphere{
+                center: Point{
+                    x: 4.0,
+                    y: 0.0,
+                    z: -7.0,
+                },
+                radius: 1.0,
+                color: Color{
+                    r: 1.0,
+                    g: 1.0,
+                    b: 1.0,
+                },
             },
-            radius: 1.0,
-            color: Color{
-                r: 1.0,
-                g: 1.0,
-                b: 1.0,
+        ),
+    },
+    Scene {
+        width: 800,
+        height: 600,
+        fov: 90.0,
+        element: Element::Plane(
+            Plane{
+                origin: Point{
+                    x: 0.0,
+                    y: -1.0,
+                    z: 0.0,
+                },
+                normal: Vector3{
+                    x: 0.0,
+                    y: -1.0,
+                    z: 0.0,
+                },
+                color: Color{
+                    r: 0.1,
+                    g: 0.1,
+                    b: 0.1,
+                },
             },
-        },
-    }];
+        ),
+    },
+    ];
+    
   /*
 let scene = vec![Scene {
         width: 800,
