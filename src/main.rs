@@ -8,6 +8,90 @@ fn gamma_encode(linear: f32) -> f32 {
     linear.powf(1.0 / GAMMA)
 }
 
+impl Neg for Vector3{
+    type Output = Vector3;
+
+    fn neg(self) -> Vector3{
+        Vector3{
+            x: -self.x,
+            y: -self.y,
+            z: -self.z,
+        }
+    }
+}
+
+impl Sub<Point> for Point {
+    type Output = Vector3;
+
+    fn sub(self, other: Point) -> Vector3 {
+        Vector3 {
+            x: self.x - other.x,
+            y: self.y - other.y,
+            z: self.z - other.z,
+        }
+    }
+}
+
+impl Sub<Vector3> for Vector3{
+    type Output = Vector3;
+
+    fn sub(self, other: Vector3) -> Vector3{
+        Vector3 {
+            x: self.x - other.x,
+            y: self.y - other.y,
+            z: self.z - other.z,
+        }
+    }
+}
+
+impl Add<Vector3> for Point{
+    type Output = Point;
+
+    fn add(self, other: Vector3) -> Point{
+        Point{
+            x: self.x + other.x,
+            y: self.y + other.y,
+            z: self.z + other.z,
+        }
+    }
+}
+
+impl Mul<f64> for Vector3{
+    type Output = Vector3;
+
+    fn mul(self, other: f64) -> Vector3{
+        Vector3{
+            x: self.x * other,
+            y: self.y * other,
+            z: self.z * other,
+        }
+    }
+}
+
+impl Mul<Color> for Color{
+    type Output = Color;
+
+    fn mul(self, other: Color) -> Color{
+        Color{
+            r: self.r * other.r,
+            g: self.g * other.g,
+            b: self.b * other.b,
+        }
+    }
+}
+
+impl Mul<f32> for Color{
+    type Output = Color;
+
+    fn mul(self, other:f32) -> Color{
+        Color{
+            r:self.r * other,
+            g:self.g * other,
+            b:self.b * other,
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct Point{
     pub x: f64,
@@ -25,17 +109,6 @@ impl Point{
     }
 }
 
-impl Sub<Point> for Point {
-    type Output = Vector3;
-
-    fn sub(self, other: Point) -> Vector3 {
-        Vector3 {
-            x: self.x - other.x,
-            y: self.y - other.y,
-            z: self.z - other.z,
-        }
-    }
-}
 
 #[derive(Clone, Copy)]
 pub struct Color{
@@ -53,6 +126,14 @@ impl Color{
             255,
         )
     }
+
+    pub fn clamp(&self) -> Color {
+        Color {
+            r: self.r.min(1.0).max(0.0),
+            b: self.b.min(1.0).max(0.0),
+            g: self.g.min(1.0).max(0.0),
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -60,6 +141,7 @@ pub struct Sphere{
     pub center: Point,
     pub radius: f64,
     pub color: Color,
+    pub albedo: f32,
 }
 
 #[derive(Clone, Copy)]
@@ -67,6 +149,7 @@ pub struct Plane{
     pub origin: Point,
     pub normal: Vector3,
     pub color: Color,
+    pub albedo: f32,
 }
 
 #[derive(Clone, Copy)]
@@ -82,6 +165,13 @@ impl Element {
             Element::Plane(ref p) => p.color,
         }
     }
+
+    pub fn albedo(&self) -> f32{
+        match *self {
+            Element::Sphere(ref s) => s.albedo,
+            Element::Plane(ref p) => p.albedo,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -90,6 +180,7 @@ pub struct Scene{
     pub height: u32,
     pub fov: f64,
     pub element: Element,
+    pub light: Light,
 }
 
 #[derive(Clone, Copy)]
@@ -205,6 +296,51 @@ impl Intersectable for Element {
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct Light{
+    pub direction: Vector3,
+    pub color: Color,
+    pub intensity: f32,
+}
+
+pub trait Surface_normal{
+    fn surface_normal(&self,hit_point: &Point) -> Vector3;
+}
+
+impl Surface_normal for Sphere{
+    fn surface_normal(&self,hit_point: &Point) -> Vector3{
+        (*hit_point - self.center).normalize()
+    }
+}
+
+impl Surface_normal for Plane{
+    fn surface_normal(&self,hit_point: &Point) -> Vector3{
+        -self.normal
+    }
+}
+
+impl Surface_normal for Element{
+    fn surface_normal(&self,hit_point: &Point) -> Vector3{
+        match *self{
+            Element::Sphere(ref s) => s.surface_normal(hit_point),
+            Element::Plane(ref p) => p.surface_normal(hit_point),
+        }
+    }
+}
+
+pub fn get_color(scene: &Scene, ray: &Ray, inter: f64) -> Color {
+    let hit_point = ray.origin + (ray.direction * inter );
+    let surface_normal = scene.element.surface_normal(&hit_point);
+    let direction_to_light = -scene.light.direction.normalize();
+    let light_power = (surface_normal.dot(&direction_to_light) as f32).max(0.0) *
+                      scene.light.intensity;
+    let light_reflected = scene.element.albedo() / std::f32::consts::PI;
+
+    let color = scene.element.color() * scene.light.color * light_power *
+                light_reflected;
+    color.clamp()
+}
+
 pub fn render(scene: &[Scene]) -> DynamicImage {
     println!("{}",scene[0].width);
     let mut image = DynamicImage::new_rgb8(scene[0].width, scene[0].height);
@@ -219,13 +355,15 @@ pub fn render(scene: &[Scene]) -> DynamicImage {
                 if inter_tmp != None{
                     if inter != None{
                         if inter_tmp < inter{
-                            color = s.element.color();
                             inter = inter_tmp;
+                            color = get_color(&s,&ray, inter.unwrap())
+                            //color = s.element.color();
                         }
                     } 
                     else{
-                        color = s.element.color();
                         inter = inter_tmp;
+                        color = get_color(&s,&ray, inter.unwrap())
+                        //color = s.element.color();
                     }
 
                 }
@@ -247,16 +385,64 @@ let scene = vec![
                 center: Point{
                     x: 0.0,
                     y: 0.0,
-                    z: -3.0,
+                    z: -5.0,
                 },
                 radius: 1.0,
                 color: Color{
-                    r: 0.2,
-                    g: 1.0,
-                    b: 0.2,
+                    r: 1.0,
+                    g: 0.0,
+                    b: 0.0,
                 },
+                albedo: 0.18,
             },
         ),
+        light: Light{   
+            direction: Vector3{
+                x: -2.0,
+                y: -4.0,
+                z: -3.0,
+            },
+            color: Color{
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+            },
+            intensity: 50.0, 
+        },
+    },
+    Scene {
+        width: 800,
+        height: 600,
+        fov: 90.0,
+        element: Element::Sphere(
+            Sphere{
+                center: Point{
+                    x: -3.0,
+                    y: 1.0,
+                    z: -6.0,
+                },
+                radius: 2.0,
+                color: Color{
+                    r: 0.0,
+                    g: 1.0,
+                    b: 0.0,
+                },
+                albedo: 0.18,
+            },
+        ),
+        light: Light{   
+            direction: Vector3{
+                x: -2.0,
+                y: -4.0,
+                z: -3.0,
+            },
+            color: Color{
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+            },
+            intensity: 50.0, 
+        },
     },
     Scene {
         width: 800,
@@ -266,37 +452,31 @@ let scene = vec![
             Sphere{
                 center: Point{
                     x: 2.0,
-                    y: 0.0,
-                    z: -5.0,
+                    y: 1.0,
+                    z: -4.0,
                 },
-                radius: 1.0,
+                radius: 1.5,
                 color: Color{
-                    r: 1.0,
+                    r: 0.0,
                     g: 0.0,
-                    b: 0.4,
-                },
-            },
-        ),
-    },
-    Scene {
-        width: 800,
-        height: 600,
-        fov: 90.0,
-        element: Element::Sphere(
-            Sphere{
-                center: Point{
-                    x: 4.0,
-                    y: 0.0,
-                    z: -7.0,
-                },
-                radius: 1.0,
-                color: Color{
-                    r: 1.0,
-                    g: 1.0,
                     b: 1.0,
                 },
+                albedo: 0.18,
             },
         ),
+        light: Light{   
+            direction: Vector3{
+                x: -2.0,
+                y: -4.0,
+                z: -3.0,
+            },
+            color: Color{
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+            },
+            intensity: 50.0, 
+        },
     },
     Scene {
         width: 800,
@@ -306,8 +486,8 @@ let scene = vec![
             Plane{
                 origin: Point{
                     x: 0.0,
-                    y: -1.0,
-                    z: 0.0,
+                    y: -2.0,
+                    z: -5.0,
                 },
                 normal: Vector3{
                     x: 0.0,
@@ -319,8 +499,60 @@ let scene = vec![
                     g: 0.1,
                     b: 0.1,
                 },
+                albedo: 0.38,
             },
         ),
+        light: Light{   
+            direction: Vector3{
+                x: -2.0,
+                y: -4.0,
+                z: -3.0,
+            },
+            color: Color{
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+            },
+            intensity: 50.0, 
+        },
+    },
+    Scene {
+        width: 800,
+        height: 600,
+        fov: 90.0,
+        element: Element::Plane(
+            Plane{
+                origin: Point{
+                    x: 0.0,
+                    y: 0.0,
+                    z: -20.0,
+                },
+                normal: Vector3{
+                    x: 0.0,
+                    y: 0.0,
+                    z: -1.0,
+                },
+                color: Color{
+                    r: 0.1,
+                    g: 0.1,
+                    b: 0.1,
+                },
+                albedo: 0.38,
+            },
+        ),
+        light: Light{   
+            direction: Vector3{
+                x: -2.0,
+                y: -4.0,
+                z: -3.0,
+            },
+            color: Color{
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+            },
+            intensity: 50.0, 
+        },
     },
     ];
     
